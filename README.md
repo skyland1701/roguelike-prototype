@@ -9,3 +9,5 @@ A/D - rotate camera
 Left mouse button - attack
 
 1/2/3 - change attack or weapon
+
+If it spawns near a wall, just refresh the page until it spawns in a favorable spawn location (I need to fix this lol).
