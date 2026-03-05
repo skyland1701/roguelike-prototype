@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Roguelike Prototype</title>
+<style>
+body{margin:0;background:black;color:white;font-family:monospace;overflow:hidden}
+#hud{position:absolute;left:10px;top:10px}
+#minimap{position:absolute;right:10px;top:10px;border:1px solid white}
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+<canvas id="minimap" width="200" height="200"></canvas>
+
+<div id="hud">
+HP <span id="hp"></span><br>
+Gold <span id="gold"></span><br>
+Mana <span id="mana"></span><br>
+Weapon <span id="weapon"></span><br>
+Enemies <span id="ec"></span><br>
+Quest <span id="quest"></span>
+</div>
+
+<script>
+
+const canvas=document.getElementById("game")
+const ctx=canvas.getContext("2d")
+
+const minimap=document.getElementById("minimap")
+const mctx=minimap.getContext("2d")
+
+canvas.width=innerWidth
+canvas.height=innerHeight
+
+const W=canvas.width
+const H=canvas.height
+
+const MAP=64
+let map=[]
+
+function gen(){
+
+for(let y=0;y<MAP;y++){
+map[y]=[]
+for(let x=0;x<MAP;x++)map[y][x]=1
+}
+
+let rooms=[]
+
+for(let r=0;r<20;r++){
+
+let rw=4+Math.floor(Math.random()*6)
+let rh=4+Math.floor(Math.random()*6)
+
+let rx=2+Math.floor(Math.random()*(MAP-rw-2))
+let ry=2+Math.floor(Math.random()*(MAP-rh-2))
+
+for(let y=0;y<rh;y++)
+for(let x=0;x<rw;x++)
+map[ry+y][rx+x]=0
+
+rooms.push({x:rx+rw/2,y:ry+rh/2})
+
+}
+
+for(let i=1;i<rooms.length;i++){
+
+let a=rooms[i-1]
+let b=rooms[i]
+
+let x=a.x
+let y=a.y
+
+while(Math.floor(x)!=Math.floor(b.x)){
+map[Math.floor(y)][Math.floor(x)]=0
+x+=x<b.x?1:-1
+}
+
+while(Math.floor(y)!=Math.floor(b.y)){
+map[Math.floor(y)][Math.floor(x)]=0
+y+=y<b.y?1:-1
+}
+
+}
+
+return rooms
+
+}
+
+let rooms=gen()
+
+let player={
+x:rooms[0].x,
+y:rooms[0].y,
+a:0,
+hp:40,
+mana:10,
+gold:0,
+weapon:0
+}
+
+let weapons=[
+{name:"Sword",d:1.3},
+{name:"Axe",d:1.6},
+{name:"Magic",d:4}
+]
+
+let enemies=[]
+let items=[]
+let projectiles=[]
+let npc={x:rooms[1].x,y:rooms[1].y}
+
+let quest={goal:10,progress:0}
+
+function spawnEnemy(x,y,hp=3){
+enemies.push({x,y,hp,speed:0.015})
+}
+
+for(let i=2;i<rooms.length;i++){
+spawnEnemy(rooms[i].x,rooms[i].y)
+}
+
+spawnEnemy(rooms[rooms.length-1].x,rooms[rooms.length-1].y,25)
+
+function spawnItem(x,y){
+items.push({x,y})
+}
+
+let keys={}
+
+addEventListener("keydown",e=>keys[e.key.toLowerCase()]=1)
+addEventListener("keyup",e=>keys[e.key.toLowerCase()]=0)
+
+addEventListener("mousemove",e=>{
+player.a+=e.movementX*0.002
+})
+
+addEventListener("click",attack)
+
+function attack(){
+
+let range=weapons[player.weapon].d
+
+if(player.weapon==2 && player.mana>0){
+
+projectiles.push({
+x:player.x,
+y:player.y,
+dx:Math.cos(player.a)*0.2,
+dy:Math.sin(player.a)*0.2
+})
+
+player.mana--
+return
+}
+
+for(let e of enemies){
+
+let dx=e.x-player.x
+let dy=e.y-player.y
+
+let d=Math.hypot(dx,dy)
+
+if(d<range)e.hp--
+
+}
+
+}
+
+let zbuf=new Array(W)
+
+function ray(){
+
+for(let x=0;x<W;x++){
+
+let ra=player.a-0.5+x/W
+
+let sin=Math.sin(ra)
+let cos=Math.cos(ra)
+
+let d=0
+let hit=0
+
+while(!hit && d<30){
+
+d+=0.02
+
+let rx=player.x+cos*d
+let ry=player.y+sin*d
+
+if(map[Math.floor(ry)][Math.floor(rx)]==1)hit=1
+
+}
+
+zbuf[x]=d
+
+let shade=220-d*6
+if(shade<0)shade=0
+
+let h=H/d
+
+ctx.fillStyle=`rgb(${shade},${shade},${shade})`
+ctx.fillRect(x,H/2-h/2,1,h)
+
+}
+
+}
+
+function drawSprites(list,color){
+
+for(let s of list){
+
+let dx=s.x-player.x
+let dy=s.y-player.y
+
+let dist=Math.hypot(dx,dy)
+
+let ang=Math.atan2(dy,dx)-player.a
+
+while(ang>Math.PI)ang-=Math.PI*2
+while(ang<-Math.PI)ang+=Math.PI*2
+
+if(Math.abs(ang)>1)continue
+
+let size=500/dist
+
+let sx=W/2+Math.tan(ang)*W/2
+
+let left=Math.floor(sx-size/2)
+let right=Math.floor(sx+size/2)
+
+for(let x=left;x<right;x++){
+
+if(x<0||x>=W)continue
+
+if(dist<zbuf[x]){
+ctx.fillStyle=color
+ctx.fillRect(x,H/2-size/2,1,size)
+}
+
+}
+
+}
+
+}
+
+function update(){
+
+let sp=0.07
+
+let dx=Math.cos(player.a)
+let dy=Math.sin(player.a)
+
+if(keys["w"]){
+
+let nx=player.x+dx*sp
+let ny=player.y+dy*sp
+
+if(map[Math.floor(ny)][Math.floor(nx)]==0){
+player.x=nx
+player.y=ny
+}
+
+}
+
+if(keys["s"]){
+
+let nx=player.x-dx*sp
+let ny=player.y-dy*sp
+
+if(map[Math.floor(ny)][Math.floor(nx)]==0){
+player.x=nx
+player.y=ny
+}
+
+}
+
+if(keys["a"])player.a-=0.05
+if(keys["d"])player.a+=0.05
+
+if(keys["1"])player.weapon=0
+if(keys["2"])player.weapon=1
+if(keys["3"])player.weapon=2
+
+for(let e of enemies){
+
+let dx=player.x-e.x
+let dy=player.y-e.y
+
+let d=Math.hypot(dx,dy)
+
+if(d>0.6){
+
+e.x+=dx/d*e.speed
+e.y+=dy/d*e.speed
+
+}else{
+
+player.hp-=0.03
+
+}
+
+if(e.hp<=0){
+spawnItem(e.x,e.y)
+quest.progress++
+}
+
+}
+
+enemies=enemies.filter(e=>e.hp>0)
+
+for(let p of projectiles){
+
+p.x+=p.dx
+p.y+=p.dy
+
+for(let e of enemies){
+if(Math.hypot(e.x-p.x,e.y-p.y)<0.5){
+e.hp-=3
+p.dead=1
+}
+}
+
+}
+
+projectiles=projectiles.filter(p=>!p.dead)
+
+for(let it of items){
+
+if(Math.hypot(it.x-player.x,it.y-player.y)<0.7){
+player.gold++
+it.dead=1
+}
+
+}
+
+items=items.filter(i=>!i.dead)
+
+localStorage.setItem("rogueSave",JSON.stringify(player))
+
+}
+
+function minimapDraw(){
+
+let s=minimap.width/MAP
+
+mctx.fillStyle="black"
+mctx.fillRect(0,0,minimap.width,minimap.height)
+
+for(let y=0;y<MAP;y++)
+for(let x=0;x<MAP;x++){
+
+if(map[y][x]){
+mctx.fillStyle="white"
+mctx.fillRect(x*s,y*s,s,s)
+}
+
+}
+
+mctx.fillStyle="red"
+mctx.fillRect(player.x*s-2,player.y*s-2,4,4)
+
+mctx.fillStyle="green"
+mctx.fillRect(npc.x*s-2,npc.y*s-2,4,4)
+
+}
+
+function draw(){
+
+ctx.fillStyle="black"
+ctx.fillRect(0,0,W,H)
+
+ray()
+
+drawSprites(items,"yellow")
+drawSprites(enemies,"red")
+drawSprites(projectiles,"cyan")
+drawSprites([npc],"green")
+
+document.getElementById("hp").textContent=Math.floor(player.hp)
+document.getElementById("mana").textContent=player.mana
+document.getElementById("gold").textContent=player.gold
+document.getElementById("weapon").textContent=weapons[player.weapon].name
+document.getElementById("ec").textContent=enemies.length
+document.getElementById("quest").textContent=quest.progress+"/"+quest.goal
+
+minimapDraw()
+
+}
+
+function loop(){
+update()
+draw()
+requestAnimationFrame(loop)
+}
+
+let save=localStorage.getItem("rogueSave")
+
+if(save){
+let s=JSON.parse(save)
+player.x=s.x
+player.y=s.y
+player.hp=s.hp
+player.gold=s.gold
+}
+
+loop()
+
+</script>
+</body>
+</html>
